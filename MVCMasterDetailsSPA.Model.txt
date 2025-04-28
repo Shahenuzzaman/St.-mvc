@@ -1,0 +1,475 @@
+namespace MVCMasterDetailsSPA.Models
+{
+    public class Student
+    {
+        public Student()
+        {
+            this.CourseModules = new HashSet<CourseModule>();
+        }
+        public int StudentId { get; set; }
+        public string StudentName { get; set; }
+        [Required, Display(Name = "Admission Date"), DataType(DataType.Date),
+            DisplayFormat(ApplyFormatInEditMode = true, DataFormatString = "{0:yyyy-MM-dd}")]
+        public System.DateTime AdmissionDate { get; set; }
+        public string MobileNo { get; set; }
+        public bool IsEnrolled { get; set; }
+        public int CourseId { get; set; }
+        public string ImageUrl { get; set; }
+        public virtual Course Course { get; set; }
+        public virtual ICollection<CourseModule> CourseModules { get; set; }
+    }
+}
+
+public class Course
+{
+    public Course()
+    {
+        this.Students = new HashSet<Student>();
+    }
+    public int CourseId { get; set; }
+    public string CourseName { get; set; }
+    public virtual ICollection<Student> Students { get; set; }
+}
+
+public class CourseModule
+{
+    public int CourseModuleId { get; set; }
+    public int StudentId { get; set; }
+    public string ModuleName { get; set; }
+    public int Duration { get; set; }
+    public virtual Student Student { get; set; }
+}
+
+
+ public class AppDbContext:DbContext
+ {
+     public AppDbContext():base("AppDbContext")
+     {}
+     public virtual DbSet<Student> Students { get; set; }
+     public virtual DbSet<Course> Courses { get; set; }
+     public virtual DbSet<CourseModule> CourseModules { get; set; }
+ }
+
+
+protected override void Seed(MVCMasterDetailsSPA.DAL.AppDbContext context)
+{
+    var courses = new List<Course>
+    {
+        new Course {CourseName="C#" },
+        new Course {CourseName="J2EE" },
+        new Course {CourseName="NT" }
+    };
+    courses.ForEach(s => context.Courses.AddOrUpdate(p => p.CourseName, s));
+    context.SaveChanges();
+}
+
+
+public class StudentViewModel
+{
+    public int StudentId { get; set; }
+    [Required(ErrorMessage = "Student Name is required.")]
+    [Display(Name = "Student Name")]
+    public string StudentName { get; set; }
+    [Required(ErrorMessage = "Admission Date is required.")]
+    [Display(Name = "Admission Date")]
+    [DataType(DataType.Date)]
+    [DisplayFormat(ApplyFormatInEditMode = true, DataFormatString = "{0:yyyy-MM-dd}")]
+    public DateTime AdmissionDate { get; set; }
+    [Required(ErrorMessage = "Mobile Number is required.")]
+
+    [Display(Name = "Mobile No")]
+    public string MobileNo { get; set; }
+    [Display(Name = "Enrolled?")]
+    public bool IsEnrolled { get; set; }
+    [Required(ErrorMessage = "Course is required.")]
+    [Display(Name = "Course")]
+    public int CourseId { get; set; }
+    [Display(Name = "Image")]
+    public string ImageUrl { get; set; }
+    public string CourseName { get; set; }
+    public int CourseModuleId { get; set; }
+    public string ModuleName { get; set; }
+ 
+    public int Duration { get; set; }
+
+    [Display(Name = "Upload Picture")]
+    public HttpPostedFileBase ProfileFile { get; set; }
+    public virtual IList<Course> Courses { get; set; }
+    public virtual IList<Student> Students { get; set; }
+    public virtual IList<CourseModule> CourseModules { get; set; } = new List<CourseModule>();
+}
+
+<div class="container body-content">
+    <ul class="nav navbar-nav">
+        <li>
+            @Html.ActionLink("Student List", "Index", "Students", new { area = "" },                     new { @class = "navbar-brand" })
+        </li>
+    </ul>
+</div>
+
+ public class StudentsController : Controller
+ {
+     AppDbContext db=new AppDbContext();
+     [HttpGet]
+     public ActionResult Index()
+     {
+         IEnumerable<Student> students = db.Students.Include(c => c.Course).Include(c => c.CourseModules).ToList();
+         return View(students);
+     }
+     [HttpGet]
+     public ActionResult CreatePartial()
+     {
+         StudentViewModel student = new StudentViewModel();
+         student.Courses = db.Courses.ToList();
+         student.CourseModules.Add(new CourseModule() { CourseModuleId = 1 });
+         return PartialView("_CreateStudentPartial", student);
+     }
+     [HttpPost]
+ 
+     [ValidateAntiForgeryToken]
+     public JsonResult CreateStudent(StudentViewModel vobj)
+     {
+         if (!ModelState.IsValid)
+         {
+             vobj.Courses = db.Courses.ToList();
+             return Json(new { success = false });
+         }
+         Student student = new Student
+         {
+             StudentName = vobj.StudentName,
+             AdmissionDate = vobj.AdmissionDate,
+             MobileNo = vobj.MobileNo,
+             CourseId = vobj.CourseId,
+             IsEnrolled = vobj.IsEnrolled,
+             CourseModules = vobj.CourseModules
+         };
+
+         if (vobj.ProfileFile != null)
+         {
+             string uniqueFileName = GetFileName(vobj.ProfileFile);
+             student.ImageUrl = uniqueFileName;
+         }
+         else
+         {
+             student.ImageUrl = "noimage.png";
+         }
+
+         db.Students.Add(student);
+         try
+         {
+             db.SaveChanges();
+             return Json(new { success = true, redirectUrl = Url.Action("Index") });
+         }
+         catch (Exception ex)
+         {
+             vobj.Courses = db.Courses.ToList();
+             return Json(new { success = false });
+         }
+     }
+
+     private string GetFileName(HttpPostedFileBase file)
+     {
+         string fileName = "";
+         if (file != null)
+         {
+             fileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
+             string path = Path.Combine(Server.MapPath("~/images/"), fileName);
+             file.SaveAs(path);
+         }
+         return fileName;
+     }
+
+ [HttpPost]
+ public JsonResult DeleteStudent(int id)
+ {
+     Student student = db.Students.Find(id);
+     if (student != null)
+     {
+         var modules = db.CourseModules.Where(s => s.StudentId == id).ToList();
+         db.CourseModules.RemoveRange(modules);
+         db.Entry(student).State = EntityState.Deleted;
+         db.SaveChanges();
+         return Json(new { success = true });
+     }
+     return Json(new { success = false, message = "Student not found." });
+ }
+
+
+@model IEnumerable<MVCMasterDetailsSPA.Models.Student>
+@{
+    ViewBag.Title = "Index";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<h2>Student List</h2>
+<div id="student-app">
+    <div>
+        <button id="btnCreate" class="btn btn-success float-end mb-2">Add New Student</button>
+    </div>
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>Image</th>
+                <th>Student Name</th>
+                <th>Admission Date</th>
+                <th>Mobile No</th>
+                <th>Course</th>
+                <th>Enrolled?</th>
+                <th>Modules</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="student-list-body">
+            @foreach (var s in Model)
+            {
+                <tr data-student-id="@s.StudentId">
+                    <td><img src="@Url.Content("~/images/"+s.ImageUrl)" height="100"></td>
+                    <td>@s.StudentName</td>
+                    <td>@s.AdmissionDate.ToString("yyyy-MM-dd")</td>
+                    <td>@s.MobileNo</td>
+                    <td>@s.Course.CourseName</td>
+                    <td>@(s.IsEnrolled? "Enrolled": "Not Enrolled")</td>
+                    <td>
+                        <ul>
+                            @foreach (var m in s.CourseModules)
+                            {
+                                <li>@m.ModuleName : @m.Duration</li>
+                            }
+                        </ul>
+                    </td>
+                    <td>
+                        <a class="btn btn-primary btn-sm edit-btn" href="@Url.Action("EditPartial", "Students", new {id=s.StudentId})">Edit</a>
+
+                        <button class="btn btn-danger btn-sm delete-btn" data-student-id="@s.StudentId" data-student-name="@s.StudentName">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<div id="modalContainer">
+
+</div>
+@section scripts {
+    <script>
+        $(document).ready(function () {
+
+            $("#btnCreate").click(function () {
+                $.get('@Url.Action("CreatePartial", "Students")', function (data) {
+                    $("#modalContainer").html('<div class="modal fade show" style="display:block;" aria-modal="true" role="dialog"><div class="modal-dialog modal-lg"><div class="modal-content">' + data + '</div></div></div><div class="modal-backdrop fade show"></div>');
+                    attachModalEventListeners();
+                });
+            });
+
+
+            //$('#student-list-body').on('click', '.edit-btn', function (e) {
+            //    e.preventDefault();
+            //    var editUrl = $(this).attr('href');
+
+            //    $.get(editUrl, function (data) {
+            //        $("#modalContainer").html('<div class="modal fade show" style="display:block;" aria-modal="true" role="dialog"><div class="modal-dialog modal-lg"><div class="modal-content">' + data + '</div></div></div><div class="modal-backdrop fade show"></div>');
+            //        attachModalEventListeners("Edit", $(e.currentTarget).closest('tr').data('student-id'));
+            //    });
+            //});
+
+
+
+
+            $('#student-list-body').on('click', '.delete-btn', function () {
+                var studentId = $(this).data('student-id');
+                var studentName = $(this).data('student-name');
+                if (confirm('Are you sure you want to delete ' + studentName + '?')) {
+                    $.post('@Url.Action("DeleteStudent", "Students")', { id: studentId })
+                        .done(function (response) {
+                            if (response.success) {
+                                window.location.reload();
+                            } else {
+                                alert('Error deleting student: ' + response.message);
+                            }
+                        })
+                        .fail(function () {
+                            alert('An error occurred while deleting the student.');
+                        });
+                }
+            });
+
+            function attachModalEventListeners(action = "Create", studentId = null) {
+                $(document).off("click", ".modal-backdrop, .modal .btn-secondary").on("click", ".modal-backdrop, .modal .btn-secondary", function () {
+                    $("#modalContainer").empty();
+                });
+
+                $(document).off("submit", "#createStudentForm, #editStudentForm").on("submit", "#createStudentForm, #editStudentForm", function (e) {
+                    e.preventDefault();
+                    var form = $(this);
+                    var formData = new FormData(this);
+                    var url = '';
+                    url = '@Url.Action("CreateStudent", "Students")';
+
+
+
+                    @*if (form.attr('id') === "createStudentForm" && action === "Create") {
+                        url = '@Url.Action("CreateStudent", "Students")';
+                    } else if (form.attr('id') === "editStudentForm" && action === "Edit") {
+                        url = '@Url.Action("EditStudent", "Students")';
+                        if (studentId) {
+                            formData.append("StudentId", studentId);
+                        }
+                    }*@
+
+                    if (url) {
+                        $.ajax({
+                            url: url,
+                            type: 'POST',
+                            data: formData,
+                            contentType: false,
+                            processData: false,
+                            success: function (response) {
+                                if (response.success) {
+                                    $("#modalContainer").empty();
+                                    window.location.reload();
+                                } else {
+                                    $("#modalContainer .modal-content").html(response);
+                                    attachModalEventListeners(action, studentId);
+                                }
+                            },
+                            error: function () {
+                                alert("Error performing operation.");
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    </script>
+}
+
+
+@model MVCMasterDetailsSPA.ViewModels.StudentViewModel
+    <div class="modal-header">
+        <h5 class="modal-title">Add New Student</h5>
+    </div>
+    <div class="modal-body">
+        @using (Html.BeginForm("CreateStudent", "Students", FormMethod.Post, new { id = "createStudentForm", enctype = "multipart/form-data" }))
+        {
+            @Html.AntiForgeryToken()
+            @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+            <div class="row">
+                <div class="col-md-7">
+                    <h4> Student Information</h4>
+                    <div class="form-group mb-2">
+                        @Html.LabelFor(model => model.StudentName, htmlAttributes: new { @class = "control-label col-md-3" })
+                        @Html.EditorFor(model => model.StudentName, new { htmlAttributes = new { @class = "form-control" } })
+                        @Html.ValidationMessageFor(model => model.StudentName, "", new { @class = "text-danger" })
+                    </div>
+                    <div class="form-group mb-2">
+                        @Html.LabelFor(model => model.AdmissionDate, htmlAttributes: new { @class = "control-label col-md-3" })
+                        @Html.EditorFor(model => model.AdmissionDate, new { htmlAttributes = new { @class = "form-control" } })
+                        @Html.ValidationMessageFor(model => model.AdmissionDate, "", new { @class = "text-danger" })
+                    </div>
+                    <div class="form-group mb-2">
+                        @Html.LabelFor(model => model.MobileNo, htmlAttributes: new { @class = "control-label col-md-3" })
+                        @Html.EditorFor(model => model.MobileNo, new { htmlAttributes = new { @class = "form-control" } })
+                        @Html.ValidationMessageFor(model => model.MobileNo, "", new { @class = "text-danger" })
+                    </div>
+                    <div class="form-group mb-2">
+                        @Html.LabelFor(model => model.IsEnrolled, htmlAttributes: new { @class = "control-label col-md-3" })
+                        @Html.EditorFor(model => model.IsEnrolled)
+                        @Html.ValidationMessageFor(model => model.IsEnrolled, "", new { @class = "text-danger" })
+                    </div>
+                    <div class="form-group mb-2">
+                        @Html.LabelFor(model => model.CourseId, htmlAttributes: new { @class = "control-label col-md-3" })
+                        @Html.DropDownListFor(model => model.CourseId, new SelectList(Model.Courses, "CourseId", "CourseName"), "Select Course", new { @class = "form-control" })
+                        @Html.ValidationMessageFor(model => model.CourseId, "", new { @class = "text-danger" })
+                    </div>
+                    <div class="form-group mb-2">
+                        <img id="imageFile" src="~/images/noimage.png" alt="image" width="100" /><br />
+                        @Html.LabelFor(model => model.ProfileFile, htmlAttributes: new { @class = "control-label col-md-3" })
+                        <input onchange="readUrl(this)" type="file" name="ProfileFile" id="ProfileFile" class="invisible" />
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <h4> Module Information</h4>
+                    <button onclick="AddModule()" type="button" class="btn btn-warning mb-2">Add Module</button>
+                    @Html.Partial("_AddModules", Model.CourseModules)
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-success">Create Student</button>
+            </div>
+        }
+    </div>
+    <script src="~/Scripts/jquery-3.7.1.min.js"></script>
+<script>
+    function readUrl(i) {
+        if (i.files && i.files[0]) {
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                $("#imageFile").attr('src', e.target.result)
+            }
+            reader.readAsDataURL(i.files[0]);
+        }
+    }
+    function deleteRow(btn) {
+        $(btn).closest('tr').remove();
+        updateCourseModuleIndex();
+    }
+    function AddModule() {
+        var lastIndex = parseInt($('#HIndex').val());
+        var newRow = `
+        <tr>
+            <td>
+                <input type="text" value="" class="form-control" name="CourseModules[${lastIndex}].ModuleName" />
+            </td>
+            <td>
+                <input type="text" value="" class="form-control" name="CourseModules[${lastIndex}].Duration" />
+            </td>
+            <td>
+                <button onclick="deleteRow(this)" type="button" class="btn btn-danger">Delete</button>
+            </td>
+        </tr>
+        `
+        $("#ExTable tbody").append(newRow);
+        $('#HIndex').val(lastIndex + 1);
+        updateCourseModuleIndex();
+    }
+    function updateCourseModuleIndex() {
+        $("#ExTable tbody tr").each(function (index) {
+            $(this).find("input[name^='CourseModules']").each(function () {
+                var name = $(this).attr("name");
+                name = name.replace(/CourseModules\[\d+\]/, "CourseModules[" + index + "]");
+                $(this).attr("name", name)
+            })
+        })
+    }
+   
+</script>
+
+
+@model List<MVCMasterDetailsSPA.Models.CourseModule>
+<table id="ExTable" class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Module Name</th>
+            <th>Duration</th>
+        </tr>
+    </thead>
+    <tbody>
+        @for (int i = 0; i < Model.Count; i++)
+        {
+            <tr>
+                <td>
+                    <input type="text" value="@Model[i].ModuleName" class="form-control" name="CourseModules[@i].ModuleName" />
+                </td>
+                <td>
+                    <input type="text" value="@Model[i].Duration" class="form-control" name="CourseModules[@i].Duration" />
+                </td>
+                <td>
+                    <button onclick="deleteRow(this)" type="button" class="btn btn-danger">Delete</button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+<input type="hidden" id="HIndex" value="@Model.Count"/>
